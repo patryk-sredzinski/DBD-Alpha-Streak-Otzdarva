@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Killer Perks Gallery</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .groups-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      column-gap: 12px;
+      row-gap: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .group-card {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-rows: 1fr;
+      gap: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .perk {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .perk img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .empty {
+      visibility: hidden;
+    }
+
+    .perk-tooltip {
+      position: fixed;
+      z-index: 9999;
+      pointer-events: none;
+      max-width: 440px;
+      max-height: 60vh;
+      overflow: hidden auto;
+      padding: 12px 14px;
+      background: rgba(14, 14, 18, 0.96);
+      color: #f6f7fb;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      font-size: 13px;
+      line-height: 1.35;
+      opacity: 0;
+      transition: opacity 80ms linear;
+    }
+
+    .perk-tooltip.visible {
+      opacity: 1;
+    }
+
+    .perk-tooltip h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      line-height: 1.3;
+      font-weight: 700;
+    }
+
+    .perk-tooltip p,
+    .perk-tooltip ul,
+    .perk-tooltip ol {
+      margin: 0 0 8px;
+    }
+
+    .perk-tooltip ul,
+    .perk-tooltip ol {
+      padding-left: 20px;
+    }
+
+    .perk-tooltip a {
+      color: #8db8ff;
+      text-decoration: none;
+    }
+
+    .perk-tooltip img {
+      width: 16px !important;
+      height: 16px !important;
+      max-width: 16px !important;
+      max-height: 16px !important;
+      object-fit: contain;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <section id="groups-grid" class="groups-grid"></section>
+  <aside id="perk-tooltip" class="perk-tooltip" aria-hidden="true"></aside>
+
+  <script src="./assets/killer_perks/manifest.js"></script>
+  <script src="./killer-perks-data-2.js"></script>
+  <script>
+    (function render() {
+      var manifest = window.KILLER_PERKS_MANIFEST;
+      var details = (window.KILLER_PERK_DETAILS && window.KILLER_PERK_DETAILS.byImageName) || {};
+      var grid = document.getElementById("groups-grid");
+      var tooltip = document.getElementById("perk-tooltip");
+
+      if (!manifest || !Array.isArray(manifest.items)) {
+        return;
+      }
+
+      function getDetailByFile(fileName) {
+        if (!fileName) return null;
+        var key = String(fileName).toLowerCase();
+        var stripped = key.replace(/^\d+px-/, "");
+        return details[key] || details[stripped] || null;
+      }
+
+      function moveTooltip(clientX, clientY) {
+        var pad = 12;
+        var rect = tooltip.getBoundingClientRect();
+        var x = clientX + 18;
+        var y = clientY + 18;
+
+        if (x + rect.width + pad > window.innerWidth) {
+          x = clientX - rect.width - 18;
+        }
+        if (y + rect.height + pad > window.innerHeight) {
+          y = window.innerHeight - rect.height - pad;
+        }
+        if (x < pad) x = pad;
+        if (y < pad) y = pad;
+
+        tooltip.style.left = x + "px";
+        tooltip.style.top = y + "px";
+      }
+
+      function showTooltip(detail, event) {
+        if (!detail || !detail.descriptionHtml) return;
+        var cleanedHtml = cleanDescriptionHtml(detail.descriptionHtml);
+        tooltip.innerHTML =
+          "<h3>" + (detail.perkName || "") + "</h3>" +
+          "<div>" + cleanedHtml + "</div>";
+        tooltip.classList.add("visible");
+        tooltip.setAttribute("aria-hidden", "false");
+        moveTooltip(event.clientX, event.clientY);
+      }
+
+      function cleanDescriptionHtml(rawHtml) {
+        var wrapper = document.createElement("div");
+        wrapper.innerHTML = rawHtml || "";
+
+        // Remove the common yellow quote/flavor text blocks.
+        var quoteNodes = wrapper.querySelectorAll(
+          "span.luaClr.clr9, span[style*='#e7cda2'], span[style*='#E7CDA2']"
+        );
+
+        quoteNodes.forEach(function (node) {
+          var removable = node.closest("i") || node.closest("p") || node;
+          if (removable && removable.parentNode) {
+            removable.parentNode.removeChild(removable);
+          }
+        });
+
+        // Remove now-empty wrappers left after quote cleanup.
+        wrapper.querySelectorAll("p, i").forEach(function (node) {
+          if (!node.textContent || !node.textContent.trim()) {
+            node.remove();
+          }
+        });
+
+        return wrapper.innerHTML.trim();
+      }
+
+      function hideTooltip() {
+        tooltip.classList.remove("visible");
+        tooltip.setAttribute("aria-hidden", "true");
+      }
+
+      var perks = manifest.items
+        .filter(function (item) { return item && item.file; })
+        .slice()
+        .sort(function (a, b) {
+          return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+        });
+
+      var columns = 3;
+      var groupSize = 4;
+      var totalGroups = Math.ceil(perks.length / groupSize);
+      var rowCount = Math.ceil(totalGroups / columns);
+      grid.style.gridTemplateRows = "repeat(" + rowCount + ", minmax(0, 1fr))";
+
+      for (var i = 0; i < perks.length; i += groupSize) {
+        var group = perks.slice(i, i + groupSize);
+        var groupCard = document.createElement("article");
+        groupCard.className = "group-card";
+
+        for (var j = 0; j < groupSize; j++) {
+          var perk = group[j];
+          var slot = document.createElement("div");
+          slot.className = "perk";
+
+          if (!perk) {
+            slot.classList.add("empty");
+            groupCard.appendChild(slot);
+            continue;
+          }
+
+          var img = document.createElement("img");
+          img.src = "./assets/killer_perks/" + perk.file;
+          img.alt = "";
+          img.loading = "lazy";
+
+          slot.dataset.imageName = String(perk.file).toLowerCase();
+          slot.addEventListener("mouseenter", function (evt) {
+            var d = getDetailByFile(this.dataset.imageName);
+            if (d) {
+              showTooltip(d, evt);
+            }
+          });
+          slot.addEventListener("mousemove", function (evt) {
+            if (tooltip.classList.contains("visible")) {
+              moveTooltip(evt.clientX, evt.clientY);
+            }
+          });
+          slot.addEventListener("mouseleave", hideTooltip);
+
+          slot.appendChild(img);
+          groupCard.appendChild(slot);
+        }
+
+        grid.appendChild(groupCard);
+      }
+    })();
+  </script>
+</body>
+</html>
