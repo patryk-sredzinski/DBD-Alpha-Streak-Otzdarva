@@ -67,6 +67,17 @@ body {
   width: auto;
   height: 100%;
   overflow: visible;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.group-card.has-killer {
+  background: linear-gradient(
+    180deg,
+    rgba(63, 137, 74, 0.18) 0%,
+    rgba(44, 98, 54, 0.12) 100%
+  );
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(120, 230, 140, 0.25);
 }
 
 .group-card::after {
@@ -89,6 +100,9 @@ body {
 
 .group-counter {
   flex: 0 0 28px;
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -97,7 +111,14 @@ body {
   font-size: 16px;
   font-weight: 600;
   line-height: 1;
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.92);
+  paint-order: stroke fill;
+  text-shadow: none;
   user-select: none;
+}
+
+.group-card.has-killer .group-counter {
+  color: rgba(219, 255, 225, 0.96);
 }
 
 .group-addons {
@@ -195,6 +216,22 @@ body {
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   font-size: 24px;
   line-height: 1;
+}
+
+.killer-slot.has-killer::after {
+  content: "✓";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(148, 255, 164, 0.92);
+  text-shadow:
+    0 0 6px rgba(34, 140, 58, 0.6),
+    0 1px 1px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  z-index: 3;
 }
 
 .killer-image {

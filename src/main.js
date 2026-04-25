@@ -564,10 +564,12 @@ function render(perks, detailsMap, killers) {
     grid.innerHTML = "";
     for (let gi = 0; gi < baseGroups.length; gi += 1) {
       const slots = perkSlotsByGroup[gi];
+      const currentKiller = selectedKillers[gi];
       const columnIndex = Math.floor(gi / rowCount);
       const rowIndex = gi % rowCount;
       const groupCard = document.createElement("article");
       groupCard.className = "group-card";
+      if (currentKiller?.file) groupCard.classList.add("has-killer");
       groupCard.style.gridColumn = String(columnIndex + 1);
       groupCard.style.gridRow = String(rowIndex + 1);
 
@@ -651,11 +653,11 @@ function render(perks, detailsMap, killers) {
       killerSlot.className = "killer-slot";
       killerSlot.setAttribute("aria-label", "Select killer");
 
-      const currentKiller = selectedKillers[gi];
       if (!currentKiller?.file) {
         killerSlot.classList.add("is-empty");
       } else {
         killerSlot.classList.remove("is-empty");
+        killerSlot.classList.add("has-killer");
         const killerImg = document.createElement("img");
         killerImg.className = "killer-image";
         killerImg.src = withBase(`assets/killers/${currentKiller.file}`);
