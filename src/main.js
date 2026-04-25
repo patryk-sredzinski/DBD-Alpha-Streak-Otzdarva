@@ -3,6 +3,7 @@ const tooltip = document.getElementById("perk-tooltip");
 const resetAllBtn = document.getElementById("reset-all-btn");
 const ADDON_ORDER = ["brown", "blue", "green", "purple", "red"];
 const KILLERS_QUERY_PARAM = "killers";
+const BASE_URL = import.meta.env.BASE_URL || "/";
 const GROUP_SIZES = [
   2, 3, 4, 4, 3, 4, 3, 3, 4, 4, 4, 3, 4, 3, 2, 3, 3, 3, 2, 2, 3,
   4, 3, 4, 3, 3, 3, 4, 4, 4, 4, 3, 4, 4, 4, 4, 4, 3, 3, 3, 3, 2,
@@ -10,6 +11,10 @@ const GROUP_SIZES = [
 
 function normalizeImageKey(value) {
   return String(value || "").toLowerCase().normalize("NFC").trim();
+}
+
+function withBase(path) {
+  return `${BASE_URL}${String(path || "").replace(/^\/+/, "")}`;
 }
 
 function stripDiacritics(value) {
@@ -104,9 +109,9 @@ function getDetailByFile(fileName, details) {
 
 async function loadData() {
   const [manifestRes, detailsRes, killersRes] = await Promise.all([
-    fetch("/assets/killer_perks/manifest.json"),
-    fetch("/killer-perks-data-2.json"),
-    fetch("/assets/killers/manifest.json"),
+    fetch(withBase("assets/killer_perks/manifest.json")),
+    fetch(withBase("killer-perks-data-2.json")),
+    fetch(withBase("assets/killers/manifest.json")),
   ]);
 
   if (!manifestRes.ok) {
@@ -225,7 +230,7 @@ function createKillerPicker(killerOptions, getTakenKillers) {
 
       const thumb = document.createElement("img");
       thumb.className = "killer-option-thumb";
-      thumb.src = `/assets/killers/${opt.file}`;
+      thumb.src = withBase(`assets/killers/${opt.file}`);
       thumb.alt = "";
       thumb.loading = "lazy";
 
@@ -390,7 +395,7 @@ function render(perks, detailsMap, killers) {
     pair.forEach((name) => {
       const img = document.createElement("img");
       img.className = "group-addon";
-      img.src = `/assets/addons/${name}.png`;
+      img.src = withBase(`assets/addons/${name}.png`);
       img.alt = "";
       img.loading = "lazy";
       addonPair.appendChild(img);
@@ -413,7 +418,7 @@ function render(perks, detailsMap, killers) {
       slot.className = "perk";
 
       const img = document.createElement("img");
-      img.src = `/assets/killer_perks/${perk.file}`;
+      img.src = withBase(`assets/killer_perks/${perk.file}`);
       img.alt = "";
       img.loading = "lazy";
 
@@ -446,7 +451,7 @@ function render(perks, detailsMap, killers) {
       killerSlot.classList.remove("is-empty");
       const killerImg = document.createElement("img");
       killerImg.className = "killer-image";
-      killerImg.src = `/assets/killers/${selection.file}`;
+      killerImg.src = withBase(`assets/killers/${selection.file}`);
       killerImg.alt = "";
       killerImg.loading = "lazy";
       killerSlot.appendChild(killerImg);
