@@ -1,9 +1,11 @@
 const grid = document.getElementById("groups-grid");
 const tooltip = document.getElementById("perk-tooltip");
 const resetAllBtn = document.getElementById("reset-all-btn");
+const helpBtn = document.getElementById("help-btn");
 const ADDON_ORDER = ["brown", "blue", "green", "purple", "red"];
 const KILLERS_QUERY_PARAM = "killers";
 const PERKS_QUERY_PARAM = "perks";
+const ONBOARDING_SEEN_KEY = "dbd_alpha_streak_onboarding_seen_v1";
 const BASE_URL = import.meta.env.BASE_URL || "/";
 const GROUP_SIZES = [
   2, 3, 4, 4, 3, 4, 3, 3, 4, 4, 4, 3, 4, 3, 2, 3, 3, 3, 2, 2, 3,
@@ -480,6 +482,85 @@ function updatePerksQueryParam(perkSlotsByGroup, perks, defaultPerkSlots) {
   window.history.replaceState(null, "", nextUrl);
 }
 
+function showFirstTimePopup(force = false) {
+  try {
+    if (!force && window.localStorage.getItem(ONBOARDING_SEEN_KEY) === "1") return;
+  } catch {
+    // Ignore storage issues; we'll still try to show the popup once per page load.
+  }
+
+  const overlay = document.createElement("div");
+  overlay.className = "welcome-overlay";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Welcome to DBD Alpha Streak");
+
+  const modal = document.createElement("div");
+  modal.className = "welcome-modal";
+  modal.innerHTML = `
+    <h2>DBD Alpha Streak Tracker</h2>
+    <p class="welcome-subtitle">Created for <strong>Otzdarva</strong></p>
+    <p class="welcome-intro">
+      Objective: track progress through an <strong>Alpha Streak</strong> in Dead by Daylight.
+      Use each killer while progressing through perks in <strong>alphabetical order</strong>.
+    </p>
+    <div class="welcome-guide">
+      <div class="welcome-item">
+        <span class="welcome-icon-badge" aria-hidden="true">↺</span>
+        <p>Use the bottom-right reset control to clear the current run at any time.</p>
+      </div>
+      <div class="welcome-item">
+        <span class="welcome-icon-badge plus" aria-hidden="true">+</span>
+        <p>Select the <strong>+</strong> in the killer slot to assign the killer used for that match and perk/addon set.</p>
+      </div>
+      <div class="welcome-item">
+        <span class="welcome-icon-badge strike" aria-hidden="true">!</span>
+        <p>If a match is not won, mark it as <strong>STRIKE</strong> from the killer picker.</p>
+      </div>
+      <div class="welcome-item">
+        <span class="welcome-icon-badge drag" aria-hidden="true">⇆</span>
+        <p>Reorder perks between matches using drag-and-drop.</p>
+      </div>
+    </div>
+    <p class="welcome-note">Selections and perk reordering are stored in the URL for easy sharing and resume.</p>
+    <p class="welcome-credit">Created by XFawkes / Patryk Średziński</p>
+  `;
+
+  const footer = document.createElement("div");
+  footer.className = "welcome-actions";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "welcome-confirm-btn";
+  button.textContent = "Got it";
+
+  function close() {
+    try {
+      window.localStorage.setItem(ONBOARDING_SEEN_KEY, "1");
+    } catch {
+      // Ignore storage issues.
+    }
+    overlay.remove();
+  }
+
+  button.addEventListener("click", close);
+  overlay.addEventListener("click", (evt) => {
+    if (evt.target === overlay) close();
+  });
+  window.addEventListener(
+    "keydown",
+    (evt) => {
+      if (evt.key === "Escape" && document.body.contains(overlay)) close();
+    },
+    { once: true }
+  );
+
+  footer.appendChild(button);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
 function render(perks, detailsMap, killers) {
   const baseGroups = [];
   let cursor = 0;
@@ -569,7 +650,10 @@ function render(perks, detailsMap, killers) {
       const rowIndex = gi % rowCount;
       const groupCard = document.createElement("article");
       groupCard.className = "group-card";
-      if (currentKiller?.file) groupCard.classList.add("has-killer");
+      if (currentKiller?.file) {
+        groupCard.classList.add("has-killer");
+        if (currentKiller.strike) groupCard.classList.add("has-strike");
+      }
       groupCard.style.gridColumn = String(columnIndex + 1);
       groupCard.style.gridRow = String(rowIndex + 1);
 
@@ -658,6 +742,7 @@ function render(perks, detailsMap, killers) {
       } else {
         killerSlot.classList.remove("is-empty");
         killerSlot.classList.add("has-killer");
+        if (currentKiller.strike) killerSlot.classList.add("has-strike");
         const killerImg = document.createElement("img");
         killerImg.className = "killer-image";
         killerImg.src = withBase(`assets/killers/${currentKiller.file}`);
@@ -731,6 +816,10 @@ async function main() {
       );
 
     render(perks, detailsMap, killers);
+    showFirstTimePopup();
+    if (helpBtn) {
+      helpBtn.addEventListener("click", () => showFirstTimePopup(true));
+    }
   } catch (error) {
     console.error(error);
   }
