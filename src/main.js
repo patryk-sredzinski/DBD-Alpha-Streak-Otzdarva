@@ -17,6 +17,10 @@ function withBase(path) {
   return `${BASE_URL}${String(path || "").replace(/^\/+/, "")}`;
 }
 
+function normalizedFileName(fileName) {
+  return String(fileName || "").normalize("NFC");
+}
+
 function stripDiacritics(value) {
   return String(value || "")
     .normalize("NFD")
@@ -418,7 +422,7 @@ function render(perks, detailsMap, killers) {
       slot.className = "perk";
 
       const img = document.createElement("img");
-      img.src = withBase(`assets/killer_perks/${perk.file}`);
+      img.src = withBase(`assets/killer_perks/${normalizedFileName(perk.file)}`);
       img.alt = "";
       img.loading = "lazy";
 
