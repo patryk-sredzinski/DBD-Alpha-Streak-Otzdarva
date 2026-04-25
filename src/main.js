@@ -3,6 +3,7 @@ const tooltip = document.getElementById("perk-tooltip");
 const resetAllBtn = document.getElementById("reset-all-btn");
 const ADDON_ORDER = ["brown", "blue", "green", "purple", "red"];
 const KILLERS_QUERY_PARAM = "killers";
+const PERKS_QUERY_PARAM = "perks";
 const BASE_URL = import.meta.env.BASE_URL || "/";
 const GROUP_SIZES = [
   2, 3, 4, 4, 3, 4, 3, 3, 4, 4, 4, 3, 4, 3, 2, 3, 3, 3, 2, 2, 3,
@@ -379,20 +380,128 @@ function updateKillersQueryParam(selectedKillers, killerOptions) {
   window.history.replaceState(null, "", nextUrl);
 }
 
+function flattenPerkSlots(perkSlotsByGroup) {
+  return perkSlotsByGroup.flatMap((group) => group);
+}
+
+function chunkPerkSlots(flatSlots, groupCount) {
+  const out = [];
+  for (let gi = 0; gi < groupCount; gi += 1) {
+    out.push(flatSlots.slice(gi * 4, gi * 4 + 4));
+  }
+  return out;
+}
+
+function buildPerkSlotsFromQuery(perks, defaultPerkSlots) {
+  const defaultFlat = flattenPerkSlots(defaultPerkSlots);
+  const groupCount = defaultPerkSlots.length;
+  const slotCount = groupCount * 4;
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get(PERKS_QUERY_PARAM);
+  if (!raw) {
+    return defaultPerkSlots.map((group) => group.slice());
+  }
+
+  const tokens = raw.split(".");
+  const nextFlat = defaultFlat.slice();
+
+  // Sparse format (preferred): "<slotBase36>-<perkIndexBase36|_>"
+  // Example: "0-1.2-_.5-a" means slot 0 -> perk[1], slot 2 -> empty, slot 5 -> perk[10]
+  const isSparse = tokens.some((token) => token.includes("-"));
+  if (isSparse) {
+    tokens.forEach((token) => {
+      if (!token) return;
+      const [slotKey, value] = token.split("-", 2);
+      const slotIndex = Number.parseInt(slotKey, 36);
+      if (Number.isNaN(slotIndex) || slotIndex < 0 || slotIndex >= slotCount) return;
+
+      if (!value || value === "_") {
+        nextFlat[slotIndex] = null;
+        return;
+      }
+
+      const perkIndex = Number.parseInt(value, 36);
+      if (Number.isNaN(perkIndex) || perkIndex < 0 || perkIndex >= perks.length) return;
+      nextFlat[slotIndex] = perks[perkIndex];
+    });
+  } else {
+    // Legacy dense format kept for backward compatibility.
+    const max = Math.min(tokens.length, slotCount);
+    for (let i = 0; i < max; i += 1) {
+      const token = tokens[i];
+      if (!token || token === "_") {
+        nextFlat[i] = null;
+        continue;
+      }
+      const idx = Number.parseInt(token, 36);
+      if (Number.isNaN(idx) || idx < 0 || idx >= perks.length) continue;
+      nextFlat[i] = perks[idx];
+    }
+  }
+
+  return chunkPerkSlots(nextFlat, groupCount);
+}
+
+function updatePerksQueryParam(perkSlotsByGroup, perks, defaultPerkSlots) {
+  const fileToIndex = Object.create(null);
+  perks.forEach((perk, index) => {
+    if (perk?.file) fileToIndex[perk.file] = index;
+  });
+
+  const currentFlat = flattenPerkSlots(perkSlotsByGroup);
+  const defaultFlat = flattenPerkSlots(defaultPerkSlots);
+  const tokens = [];
+  const slotCount = Math.min(currentFlat.length, defaultFlat.length);
+
+  for (let i = 0; i < slotCount; i += 1) {
+    const currentFile = currentFlat[i]?.file || null;
+    const defaultFile = defaultFlat[i]?.file || null;
+    if (currentFile === defaultFile) continue;
+
+    if (!currentFile) {
+      tokens.push(`${i.toString(36)}-_`);
+      continue;
+    }
+
+    const perkIndex = fileToIndex[currentFile];
+    if (perkIndex === undefined) continue;
+    tokens.push(`${i.toString(36)}-${perkIndex.toString(36)}`);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if (tokens.length === 0) {
+    params.delete(PERKS_QUERY_PARAM);
+  } else {
+    params.set(PERKS_QUERY_PARAM, tokens.join("."));
+  }
+
+  const query = params.toString();
+  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+  window.history.replaceState(null, "", nextUrl);
+}
+
 function render(perks, detailsMap, killers) {
-  const groups = [];
+  const baseGroups = [];
   let cursor = 0;
   for (const size of GROUP_SIZES) {
     if (cursor >= perks.length) break;
-    groups.push(perks.slice(cursor, cursor + size));
+    baseGroups.push(perks.slice(cursor, cursor + size));
     cursor += size;
   }
   if (cursor < perks.length) {
-    groups.push(perks.slice(cursor));
+    baseGroups.push(perks.slice(cursor));
   }
+  const defaultPerkSlots = baseGroups.map((group) => {
+    const slots = [null, null, null, null];
+    for (let i = 0; i < Math.min(group.length, 4); i += 1) {
+      slots[i] = group[i];
+    }
+    return slots;
+  });
+  const perkSlotsByGroup = buildPerkSlotsFromQuery(perks, defaultPerkSlots);
 
   const columns = 3;
-  const rowCount = Math.ceil(groups.length / columns);
+  const rowCount = Math.ceil(baseGroups.length / columns);
   grid.style.gridTemplateRows = `repeat(${rowCount}, minmax(0, 1fr))`;
   grid.style.setProperty("--group-row-count", String(rowCount));
 
@@ -408,127 +517,189 @@ function render(perks, detailsMap, killers) {
         { sensitivity: "base" }
       )
     );
-  const selectedKillers = buildSelectedKillersFromQuery(killerOptions, groups.length);
+  const selectedKillers = buildSelectedKillersFromQuery(killerOptions, baseGroups.length);
   const picker = createKillerPicker(killerOptions, () => selectedKillers);
   updateKillersQueryParam(selectedKillers, killerOptions);
-  const killerRenderers = [];
+  updatePerksQueryParam(perkSlotsByGroup, perks, defaultPerkSlots);
+  let dragSource = null;
 
-  for (let gi = 0; gi < groups.length; gi += 1) {
-    const group = groups[gi];
-    const columnIndex = Math.floor(gi / rowCount);
-    const rowIndex = gi % rowCount;
-    const groupCard = document.createElement("article");
-    groupCard.className = "group-card";
-    groupCard.style.gridColumn = String(columnIndex + 1);
-    groupCard.style.gridRow = String(rowIndex + 1);
-
-    const counter = document.createElement("div");
-    counter.className = "group-counter";
-    counter.textContent = `${gi + 1}.`;
-    groupCard.appendChild(counter);
-
-    const addonPair = document.createElement("div");
-    addonPair.className = "group-addons";
-    const start = (gi * 2) % ADDON_ORDER.length;
-    const pair = [
-      ADDON_ORDER[start],
-      ADDON_ORDER[(start + 1) % ADDON_ORDER.length],
-    ];
-    pair.forEach((name) => {
-      const img = document.createElement("img");
-      img.className = "group-addon";
-      img.src = withBase(`assets/addons/${name}.png`);
-      img.alt = "";
-      img.loading = "lazy";
-      addonPair.appendChild(img);
+  function clearDropHover() {
+    grid.querySelectorAll(".drop-hover").forEach((node) => {
+      node.classList.remove("drop-hover");
     });
-    groupCard.appendChild(addonPair);
-
-    const perkTrack = document.createElement("div");
-    perkTrack.className = "perk-track";
-
-    for (let j = 0; j < 4; j++) {
-      const perk = group[j];
-      if (!perk) {
-        const spacer = document.createElement("div");
-        spacer.className = "perk-spacer";
-        perkTrack.appendChild(spacer);
-        continue;
-      }
-
-      const slot = document.createElement("div");
-      slot.className = "perk";
-
-      const img = document.createElement("img");
-      setPerkImageWithFallback(img, perk.file);
-      img.alt = "";
-      img.loading = "lazy";
-
-      slot.dataset.imageName = String(perk.file).toLowerCase();
-      slot.addEventListener("mouseenter", function onEnter(evt) {
-        const detail = getDetailByFile(this.dataset.imageName, detailsMap);
-        if (detail) showTooltip(detail, evt);
-      });
-      slot.addEventListener("mousemove", (evt) => {
-        if (tooltip.classList.contains("visible")) {
-          moveTooltip(evt.clientX, evt.clientY);
-        }
-      });
-      slot.addEventListener("mouseleave", hideTooltip);
-
-      slot.appendChild(img);
-      perkTrack.appendChild(slot);
-    }
-    const killerSlot = document.createElement("button");
-    killerSlot.type = "button";
-    killerSlot.className = "killer-slot is-empty";
-    killerSlot.setAttribute("aria-label", "Select killer");
-
-    function renderKiller(selection) {
-      killerSlot.innerHTML = "";
-      if (!selection?.file) {
-        killerSlot.classList.add("is-empty");
-        return;
-      }
-      killerSlot.classList.remove("is-empty");
-      const killerImg = document.createElement("img");
-      killerImg.className = "killer-image";
-      killerImg.src = withBase(`assets/killers/${selection.file}`);
-      killerImg.alt = "";
-      killerImg.loading = "lazy";
-      killerSlot.appendChild(killerImg);
-
-      if (selection.strike) {
-        const strike = document.createElement("span");
-        strike.className = "killer-strike";
-        strike.textContent = "STRIKE";
-        killerSlot.appendChild(strike);
-      }
-    }
-
-    renderKiller(selectedKillers[gi]);
-    killerRenderers.push(renderKiller);
-    killerSlot.addEventListener("click", () => {
-      picker.open(selectedKillers[gi], (selection) => {
-        selectedKillers[gi] = selection;
-        renderKiller(selection);
-        updateKillersQueryParam(selectedKillers, killerOptions);
-      });
-    });
-
-    perkTrack.appendChild(killerSlot);
-    groupCard.appendChild(perkTrack);
-
-    grid.appendChild(groupCard);
   }
+
+  function movePerk(fromGroup, fromSlot, toGroup, toSlot) {
+    const source = perkSlotsByGroup[fromGroup]?.[fromSlot];
+    if (!source) return;
+    const target = perkSlotsByGroup[toGroup]?.[toSlot] || null;
+    perkSlotsByGroup[toGroup][toSlot] = source;
+    perkSlotsByGroup[fromGroup][fromSlot] = target;
+    updatePerksQueryParam(perkSlotsByGroup, perks, defaultPerkSlots);
+  }
+
+  function bindDropTarget(node, toGroup, toSlot) {
+    node.addEventListener("dragover", (evt) => {
+      if (!dragSource) return;
+      evt.preventDefault();
+      node.classList.add("drop-hover");
+    });
+    node.addEventListener("dragleave", () => {
+      node.classList.remove("drop-hover");
+    });
+    node.addEventListener("drop", (evt) => {
+      evt.preventDefault();
+      node.classList.remove("drop-hover");
+      if (!dragSource) return;
+      const from = dragSource;
+      dragSource = null;
+      movePerk(from.groupIndex, from.slotIndex, toGroup, toSlot);
+      hideTooltip();
+      clearDropHover();
+      renderGrid();
+    });
+  }
+
+  function renderGrid() {
+    grid.innerHTML = "";
+    for (let gi = 0; gi < baseGroups.length; gi += 1) {
+      const slots = perkSlotsByGroup[gi];
+      const columnIndex = Math.floor(gi / rowCount);
+      const rowIndex = gi % rowCount;
+      const groupCard = document.createElement("article");
+      groupCard.className = "group-card";
+      groupCard.style.gridColumn = String(columnIndex + 1);
+      groupCard.style.gridRow = String(rowIndex + 1);
+
+      const counter = document.createElement("div");
+      counter.className = "group-counter";
+      counter.textContent = `${gi + 1}.`;
+      groupCard.appendChild(counter);
+
+      const addonPair = document.createElement("div");
+      addonPair.className = "group-addons";
+      const start = (gi * 2) % ADDON_ORDER.length;
+      const pair = [
+        ADDON_ORDER[start],
+        ADDON_ORDER[(start + 1) % ADDON_ORDER.length],
+      ];
+      pair.forEach((name) => {
+        const img = document.createElement("img");
+        img.className = "group-addon";
+        img.src = withBase(`assets/addons/${name}.png`);
+        img.alt = "";
+        img.loading = "lazy";
+        addonPair.appendChild(img);
+      });
+      groupCard.appendChild(addonPair);
+
+      const perkTrack = document.createElement("div");
+      perkTrack.className = "perk-track";
+
+      for (let j = 0; j < 4; j += 1) {
+        const perk = slots[j];
+        if (!perk) {
+          const spacer = document.createElement("div");
+          spacer.className = "perk-spacer";
+          bindDropTarget(spacer, gi, j);
+          perkTrack.appendChild(spacer);
+          continue;
+        }
+
+        const slot = document.createElement("div");
+        slot.className = "perk";
+        slot.draggable = true;
+
+        const img = document.createElement("img");
+        setPerkImageWithFallback(img, perk.file);
+        img.alt = "";
+        img.loading = "lazy";
+
+        slot.dataset.imageName = String(perk.file).toLowerCase();
+        slot.addEventListener("mouseenter", function onEnter(evt) {
+          const detail = getDetailByFile(this.dataset.imageName, detailsMap);
+          if (detail) showTooltip(detail, evt);
+        });
+        slot.addEventListener("mousemove", (evt) => {
+          if (tooltip.classList.contains("visible")) {
+            moveTooltip(evt.clientX, evt.clientY);
+          }
+        });
+        slot.addEventListener("mouseleave", hideTooltip);
+        slot.addEventListener("dragstart", (evt) => {
+          dragSource = { groupIndex: gi, slotIndex: j };
+          slot.classList.add("dragging");
+          if (evt.dataTransfer) {
+            evt.dataTransfer.effectAllowed = "move";
+            evt.dataTransfer.setData("text/plain", `${gi}:${j}`);
+          }
+          hideTooltip();
+        });
+        slot.addEventListener("dragend", () => {
+          slot.classList.remove("dragging");
+          dragSource = null;
+          clearDropHover();
+        });
+
+        bindDropTarget(slot, gi, j);
+        slot.appendChild(img);
+        perkTrack.appendChild(slot);
+      }
+
+      const killerSlot = document.createElement("button");
+      killerSlot.type = "button";
+      killerSlot.className = "killer-slot";
+      killerSlot.setAttribute("aria-label", "Select killer");
+
+      const currentKiller = selectedKillers[gi];
+      if (!currentKiller?.file) {
+        killerSlot.classList.add("is-empty");
+      } else {
+        killerSlot.classList.remove("is-empty");
+        const killerImg = document.createElement("img");
+        killerImg.className = "killer-image";
+        killerImg.src = withBase(`assets/killers/${currentKiller.file}`);
+        killerImg.alt = "";
+        killerImg.loading = "lazy";
+        killerSlot.appendChild(killerImg);
+
+        if (currentKiller.strike) {
+          const strike = document.createElement("span");
+          strike.className = "killer-strike";
+          strike.textContent = "STRIKE";
+          killerSlot.appendChild(strike);
+        }
+      }
+
+      killerSlot.addEventListener("click", () => {
+        picker.open(selectedKillers[gi], (selection) => {
+          selectedKillers[gi] = selection;
+          updateKillersQueryParam(selectedKillers, killerOptions);
+          renderGrid();
+        });
+      });
+
+      perkTrack.appendChild(killerSlot);
+      groupCard.appendChild(perkTrack);
+      grid.appendChild(groupCard);
+    }
+  }
+
+  renderGrid();
 
   if (resetAllBtn) {
     resetAllBtn.onclick = () => {
       for (let i = 0; i < selectedKillers.length; i += 1) {
         selectedKillers[i] = { file: null, strike: false };
-        killerRenderers[i]?.(selectedKillers[i]);
+      }
+      for (let gi = 0; gi < perkSlotsByGroup.length; gi += 1) {
+        for (let si = 0; si < 4; si += 1) {
+          perkSlotsByGroup[gi][si] = defaultPerkSlots[gi][si];
+        }
       }
       updateKillersQueryParam(selectedKillers, killerOptions);
+      updatePerksQueryParam(perkSlotsByGroup, perks, defaultPerkSlots);
+      renderGrid();
     };
   }
 }
