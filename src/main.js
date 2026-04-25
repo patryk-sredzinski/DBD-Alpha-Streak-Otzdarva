@@ -1,5 +1,6 @@
 const grid = document.getElementById("groups-grid");
 const tooltip = document.getElementById("perk-tooltip");
+const resetAllBtn = document.getElementById("reset-all-btn");
 const ADDON_ORDER = ["brown", "blue", "green", "purple", "red"];
 const KILLERS_QUERY_PARAM = "killers";
 const GROUP_SIZES = [
@@ -52,6 +53,13 @@ function moveTooltip(clientX, clientY) {
 function cleanDescriptionHtml(rawHtml) {
   const wrapper = document.createElement("div");
   wrapper.innerHTML = rawHtml || "";
+
+  // Keep only one icon variant by removing mobile and tooltip preview duplicates.
+  wrapper.querySelectorAll(".mobileView, .tooltiptext").forEach((node) => node.remove());
+  wrapper.querySelectorAll(".iconLink").forEach((iconLink) => {
+    const imgs = [...iconLink.querySelectorAll("img")];
+    imgs.slice(1).forEach((img) => img.remove());
+  });
 
   const quoteNodes = wrapper.querySelectorAll(
     "span.luaClr.clr9, span[style*='#e7cda2'], span[style*='#E7CDA2']"
@@ -356,6 +364,7 @@ function render(perks, detailsMap, killers) {
   const selectedKillers = buildSelectedKillersFromQuery(killerOptions, groups.length);
   const picker = createKillerPicker(killerOptions, () => selectedKillers);
   updateKillersQueryParam(selectedKillers, killerOptions);
+  const killerRenderers = [];
 
   for (let gi = 0; gi < groups.length; gi += 1) {
     const group = groups[gi];
@@ -451,6 +460,7 @@ function render(perks, detailsMap, killers) {
     }
 
     renderKiller(selectedKillers[gi]);
+    killerRenderers.push(renderKiller);
     killerSlot.addEventListener("click", () => {
       picker.open(selectedKillers[gi], (selection) => {
         selectedKillers[gi] = selection;
@@ -463,6 +473,16 @@ function render(perks, detailsMap, killers) {
     groupCard.appendChild(perkTrack);
 
     grid.appendChild(groupCard);
+  }
+
+  if (resetAllBtn) {
+    resetAllBtn.onclick = () => {
+      for (let i = 0; i < selectedKillers.length; i += 1) {
+        selectedKillers[i] = { file: null, strike: false };
+        killerRenderers[i]?.(selectedKillers[i]);
+      }
+      updateKillersQueryParam(selectedKillers, killerOptions);
+    };
   }
 }
 
