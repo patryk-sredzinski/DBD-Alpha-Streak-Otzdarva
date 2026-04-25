@@ -21,6 +21,44 @@ function normalizedFileName(fileName) {
   return String(fileName || "").normalize("NFC");
 }
 
+function perkImageSourceCandidates(fileName) {
+  const raw = String(fileName || "");
+  const nfc = normalizedFileName(raw);
+  const candidates = [
+    withBase(`assets/killer_perks/${encodeURIComponent(nfc)}`),
+    withBase(`assets/killer_perks/${encodeURIComponent(raw)}`),
+    withBase(`assets/killer_perks/${nfc}`),
+    withBase(`assets/killer_perks/${raw}`),
+  ];
+
+  return [...new Set(candidates)];
+}
+
+function setPerkImageWithFallback(img, fileName) {
+  const candidates = perkImageSourceCandidates(fileName);
+  let idx = 0;
+
+  function loadCurrent() {
+    if (!candidates[idx]) return;
+    img.src = candidates[idx];
+  }
+
+  img.addEventListener("error", () => {
+    idx += 1;
+    if (idx < candidates.length) {
+      loadCurrent();
+      return;
+    }
+
+    // Last resort: retry the first URL once with a cache-buster.
+    if (idx === candidates.length && candidates[0]) {
+      img.src = `${candidates[0]}${candidates[0].includes("?") ? "&" : "?"}retry=${Date.now()}`;
+    }
+  });
+
+  loadCurrent();
+}
+
 function stripDiacritics(value) {
   return String(value || "")
     .normalize("NFD")
@@ -422,7 +460,7 @@ function render(perks, detailsMap, killers) {
       slot.className = "perk";
 
       const img = document.createElement("img");
-      img.src = withBase(`assets/killer_perks/${normalizedFileName(perk.file)}`);
+      setPerkImageWithFallback(img, perk.file);
       img.alt = "";
       img.loading = "lazy";
 
